@@ -1,91 +1,118 @@
 #include <PS4Controller.h>
 #include <ESP32Servo.h>
 
+// Claw servo.
 Servo myservo;
-int Lstick = 90;    // variable to read the Lstickue from the analog pin
-int Rstick;    // variable to read the Lstickue from the analog pin
-int Down;
-int Right;
-int Up;
-int Left;
-int Square;
-int Cross;
-int Circle;
-int Triangle;
-int L1;
-int R1;
-int L2;
-int R2;
 
 // Servo Capit
-#define servo1 13;
-#define servo2 14;
-#define servo3 15;
-#define servo4 25;
+#define CLAW_FRONT 13
+#define ARM_FRONT 14
+#define CLAW_BACK 15
+#define ARM_BACK 25
 
 // Motor Kiri
-#define ENA 22
-#define IN1 5
-#define IN2 18
+#define PWM_LEFT 22
+#define IN1_LEFT 5
+#define IN2_LEFT 18
 
 // Motor Kanan
-#define ENB 23
-#define IN3 19
-#define IN4 21
+#define PWM_RIGHT 23
+#define IN1_RIGHT 19
+#define IN2_RIGHT 21
+
+// Input bindings.
+#define ACCELERATE PS4.Cross()
+#define BRAKE 0
+#define REVERSE PS4.Triangle()
+#define CLAW_CLOSE PS4.R2()
+#define CLAW_OPEN PS4.L2()
+
+// Other constants.
+unsigned int motorSpeed = 100;
 
 void setup() {
   Serial.begin(115200);
+
+  // Might want to 
   PS4.begin();
+
   ESP32PWM::allocateTimer(0);
   ESP32PWM::allocateTimer(1);
   ESP32PWM::allocateTimer(2);
   ESP32PWM::allocateTimer(3);
-  myservo.setPeriodHertz(50);
-  myservo.attach(servo1, 500, 2400);  
+
+  // myservo.setPeriodHertz(50);
+  // myservo.attach(SERVO1, 500, 2400);  
   
-  pinMode(ENA, OUTPUT);
-  pinMode(ENB, OUTPUT);
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(IN3, OUTPUT);
-  pinMode(IN4, OUTPUT);
+  pinMode(PWM_LEFT, OUTPUT);
+  pinMode(PWM_RIGHT, OUTPUT);
+  pinMode(IN1_LEFT, OUTPUT);
+  pinMode(IN2_LEFT, OUTPUT);
+  pinMode(IN1_RIGHT, OUTPUT);
+  pinMode(IN2_RIGHT, OUTPUT);
 
   Serial.println("PS4 controller Ready.");
+
+  // Initial state.
+  motorOff(IN1_LEFT, IN2_LEFT);
+  motorOff(IN1_RIGHT, IN2_RIGHT);
 }
 
 void loop() {
   if (PS4.isConnected()) {
-    Lstick = PS4.LStickY();
-    Rstick = PS4.RStickY();
-    Down = PS4.Down();
-    Right = PS4.Right();
-    Up = PS4.Up();
-    Left = PS4.Left();
-    Square = PS4.Square();
-    Cross = PS4.Cross();
-    Circle = PS4.Circle();
-    Triangle = PS4.Triangle();
-    L1 = PS4.L1();
-    R1 = PS4.R1();   
-    L2 = PS4.L2();   
-    R2 = PS4.R2();
 
-    Lstick = map(Lstick, -127, 127, 0, 180);     // scale it to use it with the servo
-    Serial.println(Lstick);  //Print the angle to the Serial Monitor
-    myservo.write(Lstick);  //write the Lstickue to the servo
-    Serial.println(Cross);
-    Serial.println(Triangle);
+    // LstickY = map(LstickY, -127, 127, 0, 180);     // scale it to use it with the servo
+    // Serial.println(LstickY);  //Print the angle to the Serial Monitor
+    // myservo.write(LstickY);  //write the Lstickue to the servo
+    // Serial.println(Cross);
+    // Serial.println(Triangle);
 
-    // ini masih coba coba
-    if(Cross){
-        Lstick = 180;
-        myservo.write(180);
+    // TODO: Claw inputs.
+    if (CLAW_CLOSE) {
+
+    }
+    else if (CLAW_OPEN) {
+
     }
 
-    if(Triangle){
-        Lstick = 0;
-        myservo.write(0);
+    // Calculate motor speed based on mode.
+
+    // Calculate motor speeds for turning from left stick.
+
+    // It seems stick values range from -128 to 127, but this will need to be tested.
+    int lx = PS4.LStickX();
+
+    // Left stick should determine whether right or left motor is faster.
+    // Full right would mean only left motor is working.
+    // Full left would mean only right motor is working.
+    // Everything else linearly interpolated.
+    // Can be changed if not intuitive for players.
+    int leftMotorSpeed = map(lx + 128, 0, 255, 0, motorSpeed);
+    int rightMotorSpeed = map(127 - lx, 0, 255, 0, motorSpeed);
+
+    analogWrite(PWM_LEFT, leftMotorSpeed);
+    analogWrite(PWM_RIGHT, rightMotorSpeed);
+
+    // Order determines priority of commands.
+    if (BRAKE) {
+      // Could do actual braking, but for now this will be fine.
+      motorOff(IN1_LEFT, IN2_LEFT);
+      motorOff(IN1_RIGHT, IN2_RIGHT);
     }
+    if (REVERSE) {
+      motorReverse(IN1_LEFT, IN2_LEFT);
+      motorReverse(IN1_RIGHT, IN2_RIGHT);
+    }
+    else if (ACCELERATE) {
+      motorForward(IN1_LEFT, IN2_LEFT);
+      motorForward(IN1_RIGHT, IN2_RIGHT);
+    }
+    // Turn off if no input.
+    else {
+      motorOff(IN1_LEFT, IN2_LEFT);
+      motorOff(IN1_RIGHT, IN2_RIGHT);
+    }
+
 
     // Son, sabi dibuatin dl buat movement roda motornya dari source code ini:
     // Kalo bisa, sesuai aja ama controller setting kek game balapan. Misalnya R2 buat maju gitu gitu dsb
@@ -215,4 +242,29 @@ void loop() {
 
     delay(10);
   }
+}
+
+inline void motorOff(int pin1, int pin2) {
+  digitalWrite(pin1, LOW);
+  digitalWrite(pin2, HIGH);
+}
+
+inline void motorForward(int pin1, int pin2) {
+  digitalWrite(pin1, HIGH);
+  digitalWrite(pin2, LOW);
+}
+
+inline void motorReverse(int pin1, int pin2) {
+  digitalWrite(pin1, LOW);
+  digitalWrite(pin2, HIGH);
+}
+
+// Jangan sering dipakai, takut motor overheat.
+inline void motorBrake(int pin1, int pin2) {
+  digitalWrite(pin1, HIGH);
+  digitalWrite(pin2, HIGH);
+}
+
+inline void clawClose() {
+
 }
